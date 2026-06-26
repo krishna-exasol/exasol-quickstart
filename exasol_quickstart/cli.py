@@ -34,6 +34,32 @@ SQL_PORT = 8563
 UI_PORT = 8443
 MCP_PORT = 4896
 
+JT_CONTAINER = "exasol-quickstart-json-tables"
+JT_IMAGE = "exasol-quickstart-json-tables:latest"
+JT_WORKSPACE_VOL = "exasol-quickstart-workspace"
+JT_REPO = "https://github.com/exasol-labs/exasol-json-tables.git"
+JT_REF = "main"
+
+# JSON Tables is Python + a Rust ingest engine with no published image, so we build
+# one locally (once) from this Dockerfile. The CLI is exec'd into the standing container.
+DOCKERFILE_JSON_TABLES = """\
+FROM python:3.12-slim
+ARG EXASOL_JSON_TABLES_REPOSITORY
+ARG EXASOL_JSON_TABLES_REF
+RUN apt-get update \\
+    && apt-get install -y --no-install-recommends build-essential ca-certificates curl git \\
+    && rm -rf /var/lib/apt/lists/*
+RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \\
+        | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN git clone "${EXASOL_JSON_TABLES_REPOSITORY}" /opt/exasol-json-tables \\
+    && cd /opt/exasol-json-tables && git checkout "${EXASOL_JSON_TABLES_REF}"
+WORKDIR /opt/exasol-json-tables
+RUN python -m pip install --no-cache-dir --upgrade pip \\
+    && python -m pip install --no-cache-dir -e . \\
+    && cargo build --manifest-path crates/json_tables_ingest/Cargo.toml
+"""
+
 
 # --------------------------------------------------------------------------- UI
 def say(msg: str = "") -> None:
@@ -107,8 +133,45 @@ def wait_http(url: str, timeout: int = 180) -> bool:
     return False
 
 
+# ----------------------------------------------------------------- json-tables
+def image_exists(image: str) -> bool:
+    r = run(["docker", "images", "-q", image], check=False, capture=True)
+    return r.returncode == 0 and bool(r.stdout.strip())
+
+
+def build_jt_image() -> bool:
+    """Build the JSON Tables sidecar image (once). Returns True on success."""
+    import tempfile
+    ctx = tempfile.mkdtemp(prefix="exq-jt-")
+    with open(f"{ctx}/Dockerfile", "w", encoding="utf-8") as fh:
+        fh.write(DOCKERFILE_JSON_TABLES)
+    cmd = ["docker", "build", "-t", JT_IMAGE,
+           "--build-arg", f"EXASOL_JSON_TABLES_REPOSITORY={JT_REPO}",
+           "--build-arg", f"EXASOL_JSON_TABLES_REF={JT_REF}", ctx]
+    return run(cmd, check=False).returncode == 0
+
+
+def run_jt_sidecar() -> None:
+    run(["docker", "rm", "-f", JT_CONTAINER], check=False, capture=True)
+    # Standing container: keep it alive, exec the CLI on demand.
+    run(["docker", "run", "-d", "--name", JT_CONTAINER, "--network", NETWORK,
+         "-v", f"{JT_WORKSPACE_VOL}:/workspace", "-w", "/workspace",
+         "--entrypoint", "sleep", JT_IMAGE, "infinity"])
+
+
+def jt_passthrough(extra: list[str]) -> int:
+    """`exasol-quickstart json-tables <args>` -> run the CLI inside the sidecar."""
+    if not docker_ready():
+        die("Docker is not running.")
+    if not run(["docker", "ps", "-q", "-f", f"name=^{JT_CONTAINER}$"], capture=True).stdout.strip():
+        die(f"JSON Tables container isn't running. Start the bundle first: exasol-quickstart")
+    cmd = ["docker", "exec", JT_CONTAINER, "exasol-json-tables", *extra,
+           "--dsn", f"{DB_CONTAINER}:{SQL_PORT}", "--user", "sys", "--password", "exasol"]
+    return run(cmd, check=False).returncode
+
+
 # ----------------------------------------------------------------- nano/docker
-def nano_docker(addons: list[str], mcp_port: int, dry_run: bool) -> int:
+def nano_docker(with_json_tables: bool, mcp_port: int, dry_run: bool) -> int:
     db_cmd = [
         "docker", "run", "-d", "--name", DB_CONTAINER, "--network", NETWORK,
         "--shm-size=1g",
@@ -129,18 +192,18 @@ def nano_docker(addons: list[str], mcp_port: int, dry_run: bool) -> int:
         "--host", "0.0.0.0", "--port", str(MCP_PORT), "--no-auth",
     ]
 
-    say("\nPlan: Exasol Nano (database) + Exasol MCP server (sidecar)")
+    say("\nPlan: Exasol Nano (database) + Exasol MCP server (sidecar)"
+        + (" + JSON Tables (sidecar)" if with_json_tables else ""))
     say("  network: " + NETWORK)
     say("  db : " + " ".join(db_cmd))
     say("  mcp: " + " ".join(mcp_cmd))
-    if "json-tables" in addons:
-        warn("JSON Tables is not wired in this release yet (needs a Rust-capable "
-             "sidecar/stack); see the docs. Continuing without it.")
+    if with_json_tables:
+        say(f"  jt : {JT_CONTAINER} from {JT_IMAGE} (built once from source: Python + Rust)")
     if dry_run:
         say("\n(dry run - nothing executed)")
         return 0
 
-    total = 5
+    total = 6 if with_json_tables else 5
     step(1, total, "Checking Docker")
     if not docker_ready():
         die("Docker is not installed or not running. Start Docker and retry "
@@ -148,7 +211,7 @@ def nano_docker(addons: list[str], mcp_port: int, dry_run: bool) -> int:
     ok("Docker engine is running")
 
     step(2, total, "Preparing network and clearing any previous run")
-    run(["docker", "rm", "-f", DB_CONTAINER, MCP_CONTAINER], check=False, capture=True)
+    run(["docker", "rm", "-f", DB_CONTAINER, MCP_CONTAINER, JT_CONTAINER], check=False, capture=True)
     run(["docker", "network", "create", NETWORK], check=False, capture=True)
     ok("ready")
 
@@ -170,19 +233,37 @@ def nano_docker(addons: list[str], mcp_port: int, dry_run: bool) -> int:
     else:
         warn(f"MCP not healthy yet; check: docker logs -f {MCP_CONTAINER}")
 
-    summary(mcp_port)
+    jt_running = False
+    if with_json_tables:
+        step(6, total, "Starting JSON Tables")
+        if not image_exists(JT_IMAGE):
+            say("    building the JSON Tables image (one-time; compiles a Rust engine, a few minutes)...")
+            if not build_jt_image():
+                warn("JSON Tables image build failed; skipping it. Re-run later to retry. "
+                     "(Nano + MCP are up.)")
+            else:
+                ok("image built")
+        if image_exists(JT_IMAGE):
+            run_jt_sidecar()
+            jt_running = True
+            ok(f"container '{JT_CONTAINER}' running")
+
+    summary(mcp_port, jt_running)
     return 0
 
 
-def summary(mcp_port: int) -> None:
+def summary(mcp_port: int, jt_running: bool = False) -> None:
     say("\n" + "=" * 62)
     say("  Exasol quickstart is up")
     say("=" * 62)
     say(f"  Database : 127.0.0.1:{SQL_PORT}   (user sys / password exasol)")
     say(f"  Web UI   : https://127.0.0.1:{UI_PORT}")
     say(f"  MCP      : http://127.0.0.1:{mcp_port}/mcp   (point your LLM client here)")
-    say(f"  Logs     : docker logs -f {DB_CONTAINER}   |   docker logs -f {MCP_CONTAINER}")
-    say(f"  Stop     : docker rm -f {DB_CONTAINER} {MCP_CONTAINER}")
+    if jt_running:
+        say(f"  JSON     : exasol-quickstart json-tables --help")
+        say(f"             (put files in the '{JT_WORKSPACE_VOL}' volume, then ingest-and-wrap)")
+    stop = f"docker rm -f {DB_CONTAINER} {MCP_CONTAINER}" + (f" {JT_CONTAINER}" if jt_running else "")
+    say(f"  Stop     : {stop}")
     say("")
 
 
@@ -204,9 +285,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--base", choices=["auto", "nano-docker", "nano-native", "personal"],
                    default="auto", help="Force a specific base (default: auto by OS).")
-    p.add_argument("--with", dest="addons", action="append", default=[],
-                   choices=["json-tables"], metavar="ADDON",
-                   help="Add-ons to install (e.g. --with json-tables).")
+    p.add_argument("--no-json-tables", action="store_true",
+                   help="Skip the JSON Tables add-on (it's included by default).")
     p.add_argument("--mcp-port", type=int, default=MCP_PORT,
                    help=f"Host port for the MCP endpoint (default {MCP_PORT}).")
     p.add_argument("--dry-run", action="store_true",
@@ -218,6 +298,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    # `exasol-quickstart json-tables <args>` -> run the JSON Tables CLI in its sidecar.
+    if argv and argv[0] == "json-tables":
+        return jt_passthrough(argv[1:])
+
     args = build_parser().parse_args(argv)
     system, arch = detect()
     say(f"exasol-quickstart {__version__}  -  platform: {system}/{arch}")
@@ -228,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
     say(f"Base: {base}" + ("  (default)" if args.base == "auto" else "  (forced)"))
 
     if base == "nano-docker":
-        return nano_docker(args.addons, args.mcp_port, args.dry_run)
+        return nano_docker(not args.no_json_tables, args.mcp_port, args.dry_run)
     return not_yet(base, system, arch)
 
 
