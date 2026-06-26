@@ -135,8 +135,9 @@ def render_plan(title: str, steps: list[tuple[str, str]],
     """Pretty, readable plan: numbered steps + an endpoints panel."""
     heading(f"Plan  {DIM}·{RESET}  {title}")
     say()
+    w = max((len(s[0]) for s in steps), default=0) + 3
     for i, (what, detail) in enumerate(steps, 1):
-        say(f"   {CYAN}{i}{RESET}  {what.ljust(32)}{DIM}{detail}{RESET}")
+        say(f"   {CYAN}{i}{RESET}  {what.ljust(w)}{DIM}{detail}{RESET}")
     say()
     say(f"  {BOLD}When it's up{RESET}")
     for label, addr, note in endpoints:
@@ -371,20 +372,29 @@ def personal(with_json_tables: bool, mcp_port: int, dry_run: bool) -> int:
     EXPERIMENTAL — implemented from the documented launcher behaviour but not yet
     validated end-to-end. If anything fails, fall back to `--base nano-docker`.
     """
-    say("\nPlan: Exasol Personal (host DB) + MCP server (host, pipx)"
-        + (" + JSON Tables (host venv)" if with_json_tables else ""))
-    say("  1. install/verify the `exasol` launcher")
-    say("  2. `exasol install local`            (managed VM; ~10-20 min first time)")
-    say("  3. `exasol info --json`              (discover dsn / port / password)")
-    say(f"  4. `pipx install exasol-mcp-server`  (start MCP on 127.0.0.1:{mcp_port})")
+    title = "Exasol Personal + MCP" + (" + JSON Tables" if with_json_tables else "") + f"  {DIM}(no Docker · macOS){RESET}"
+    plan_steps = [
+        ("Install / verify the exasol launcher", "~/.local/bin/exasol"),
+        ("Provision a local Personal database", "exasol install local  (~10–20 min)"),
+        ("Discover the connection", "exasol info --json"),
+        ("Install & start the MCP server", f"pipx · port {mcp_port}"),
+    ]
     if with_json_tables:
-        say("  5. venv + Rust build of JSON Tables (guided)")
-    if dry_run:
-        say("\n(dry run - nothing executed)")
-        return 0
+        plan_steps.append(("Set up JSON Tables on the host", "venv + Rust (guided)"))
+    endpoints = [
+        ("Database", "127.0.0.1:<dbPort>", "discovered at install time"),
+        ("MCP", f"http://127.0.0.1:{mcp_port}/mcp", "point your LLM client here"),
+    ]
+    render_plan(title, plan_steps, endpoints)
+    say()
+    warn("Experimental macOS path — not yet validated end-to-end. "
+         "If anything fails, use --base nano-docker (needs Docker).")
 
-    warn("EXPERIMENTAL macOS path — not yet validated end-to-end. "
-         "If it fails, run with --base nano-docker (needs Docker).")
+    if dry_run:
+        say()
+        say(f"  {YELLOW}Dry run{RESET} {DIM}— nothing was executed.{RESET}\n")
+        return 0
+    say()
 
     exe = resolve_launcher()
     if not exe:
@@ -441,20 +451,20 @@ def personal(with_json_tables: bool, mcp_port: int, dry_run: bool) -> int:
         say(f"    exasol-json-tables ingest-and-wrap --input data.json --name demo \\")
         say(f"        --dsn 127.0.0.1:{port} --user {user} --password <password>")
 
-    say("\n" + "=" * 62)
-    say("  Exasol Personal quickstart (experimental)")
-    say("=" * 62)
-    say(f"  Database : 127.0.0.1:{port}  (user {user})")
-    say(f"  MCP      : http://127.0.0.1:{mcp_port}/mcp")
-    say("")
+    heading(f"{GREEN}✓ Exasol Personal quickstart{RESET} {DIM}(experimental){RESET}")
+    say()
+    kv("Database", f"127.0.0.1:{port}", f"user {user}")
+    kv("MCP", f"http://127.0.0.1:{mcp_port}/mcp", "point your LLM client here")
+    say()
     return 0
 
 
 def nano_native(system: str, arch: str) -> int:
-    say("\nLinux native (Nano `.run`, no Docker) is not auto-installed yet.")
-    say("On Linux the reliable path today is the Docker bundle:")
-    say("    exasol-quickstart --base nano-docker")
-    say(f"\nNative-`.run` automation is on the roadmap — see:\n    {DOCS_URL}")
+    heading("Linux native (Nano .run, no Docker)")
+    say()
+    warn("Not auto-installed yet. On Linux the reliable path today is the Docker bundle:")
+    say(f"        {CYAN}exasol-quickstart --base nano-docker{RESET}")
+    say(f"\n  {DIM}Native .run automation is on the roadmap.{RESET}\n")
     return 2
 
 

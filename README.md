@@ -55,18 +55,17 @@ Every form detects your OS, provisions Exasol the right way, and prints the endp
 
 ## 🎁 What you get
 
-```text
-                          exasol-quickstart
-                                  │
-                                  ▼
-        ┌──────────────────────────────────────────────┐
-        │   Exasol  (database)         127.0.0.1:8563  │
-        │      ▲            ▲                          │
-        │      │            │                          │
-        │   MCP server   JSON Tables                   │
-        │   :4896/mcp    ingest JSON → SQL             │
-        └──────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    QS(["⚡ exasol-quickstart"]):::cmd --> DB[("🗄️ Exasol database<br/>127.0.0.1:8563")]:::db
+    MCP["🤖 MCP server<br/>:4896/mcp"]:::svc --> DB
+    JT["📦 JSON Tables<br/>JSON → SQL"]:::svc --> DB
+    classDef db fill:#1f7a5a,stroke:#3fb950,color:#fff;
+    classDef svc fill:#1c2330,stroke:#58a6ff,color:#fff;
+    classDef cmd fill:#161b22,stroke:#d29922,color:#fff;
 ```
+
+<sub>One command starts three services on a shared Docker network — MCP and JSON Tables both connect to the database.</sub>
 
 | Component | Endpoint | Purpose |
 |-----------|----------|---------|
