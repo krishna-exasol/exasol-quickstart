@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "exasol-quickstart"
-version = "0.3.2"
+version = "0.3.3"
 description = "One command to try Exasol with AI add-ons (MCP Server + JSON Tables) — auto-selects the right setup for your OS (Windows / macOS / Linux)."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -21,7 +21,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/krishna-exasol/exasol-quickstart"
-Documentation = "https://krishna-exasol.github.io/bundle-installation-methods/case-studies/recommended-approach/"
+Repository = "https://github.com/krishna-exasol/exasol-quickstart"
 
 [project.scripts]
 exasol-quickstart = "exasol_quickstart.cli:main"

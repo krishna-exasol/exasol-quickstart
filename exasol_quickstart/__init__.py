@@ -1,7 +1,8 @@
-"""exasol-quickstart — one command to try Exasol with AI add-ons.
+"""exasol-quickstart — run Exasol with AI add-ons in one command.
 
-0.1.0 brings up Exasol Nano + the MCP server via Docker on any OS; the per-OS
-native bases (Personal on macOS, Nano .run on Linux) and JSON Tables are next.
+Detects the operating system, provisions the right Exasol base (Nano in a
+container, or Exasol Personal on macOS), and layers the MCP server and JSON
+Tables on top. See ``cli.py`` for the entry point.
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
