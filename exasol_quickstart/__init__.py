@@ -5,4 +5,4 @@ container, or Exasol Personal on macOS), and layers the MCP server and JSON
 Tables on top. See ``cli.py`` for the entry point.
 """
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
