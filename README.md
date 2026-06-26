@@ -28,15 +28,25 @@ A full Exasol analytics database, an **LLM-ready MCP server**, and **JSON-native
 **▶️ Try it** — runs once, nothing installed:
 
 ```bash
-pipx run exasol-quickstart      # with pipx
-uvx exasol-quickstart           # with uv
+pipx run exasol-quickstart
+```
+
+…or, if you prefer [uv](https://docs.astral.sh/uv/):
+
+```bash
+uvx exasol-quickstart
 ```
 
 **📌 Keep it** — installs the command so you can run it again later:
 
 ```bash
-pipx install exasol-quickstart && exasol-quickstart      # with pipx
-uv tool install exasol-quickstart && exasol-quickstart   # with uv
+pipx install exasol-quickstart && exasol-quickstart
+```
+
+…or, with uv:
+
+```bash
+uv tool install exasol-quickstart && exasol-quickstart
 ```
 
 Every form detects your OS, provisions Exasol the right way, and prints the endpoints. **No flags. No multi-step setup.**

@@ -64,29 +64,84 @@ RUN python -m pip install --no-cache-dir --upgrade pip \\
 
 
 # --------------------------------------------------------------------------- UI
+try:  # make Unicode + ANSI work on the Windows console
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+except Exception:
+    pass
+if sys.platform == "win32":
+    try:
+        import ctypes
+        _k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        _k.SetConsoleMode(_k.GetStdHandle(-11), 7)
+    except Exception:
+        pass
+
+_COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+def _c(code: str) -> str:
+    return code if _COLOR else ""
+RESET, BOLD, DIM = _c("\033[0m"), _c("\033[1m"), _c("\033[2m")
+CYAN, GREEN, YELLOW = _c("\033[36m"), _c("\033[32m"), _c("\033[33m")
+BLUE, RED = _c("\033[34m"), _c("\033[31m")
+_RULE = "─" * 54
+
+
 def say(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+def banner() -> None:
+    say()
+    say(f"  {YELLOW}⚡{RESET} {BOLD}exasol-quickstart{RESET} {DIM}v{__version__}{RESET}")
+
+
+def rule() -> None:
+    say(f"  {DIM}{_RULE}{RESET}")
+
+
+def kv(key: str, val: str, note: str = "") -> None:
+    tail = f"  {DIM}{note}{RESET}" if note else ""
+    say(f"  {DIM}{key.ljust(9)}{RESET} {val}{tail}")
+
+
+def heading(text: str) -> None:
+    say()
+    say(f"  {BOLD}{text}{RESET}")
+    rule()
+
+
 def step(n: int, total: int, msg: str) -> None:
-    say(f"\n[{n}/{total}] {msg}")
+    say(f"\n  {CYAN}[{n}/{total}]{RESET} {BOLD}{msg}{RESET}")
 
 
 def ok(msg: str) -> None:
-    say(f"    + {msg}")
+    say(f"      {GREEN}✓{RESET} {DIM}{msg}{RESET}")
 
 
 def warn(msg: str) -> None:
-    say(f"    ! {msg}")
+    say(f"      {YELLOW}!{RESET} {msg}")
 
 
 def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    say(f"\nError: {msg}")
+    say(f"\n  {RED}✗ Error{RESET}  {msg}\n")
     raise SystemExit(1)
 
 
 def run(cmd: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=check, text=True, capture_output=capture)
+
+
+def render_plan(title: str, steps: list[tuple[str, str]],
+                endpoints: list[tuple[str, str, str]]) -> None:
+    """Pretty, readable plan: numbered steps + an endpoints panel."""
+    heading(f"Plan  {DIM}·{RESET}  {title}")
+    say()
+    for i, (what, detail) in enumerate(steps, 1):
+        say(f"   {CYAN}{i}{RESET}  {what.ljust(32)}{DIM}{detail}{RESET}")
+    say()
+    say(f"  {BOLD}When it's up{RESET}")
+    for label, addr, note in endpoints:
+        tail = f"   {DIM}{note}{RESET}" if note else ""
+        say(f"      {GREEN}●{RESET} {DIM}{label.ljust(9)}{RESET}{addr}{tail}")
 
 
 # ------------------------------------------------------------------- platform
@@ -206,16 +261,35 @@ def nano_docker(with_json_tables: bool, mcp_port: int, dry_run: bool) -> int:
         "--host", "0.0.0.0", "--port", str(MCP_PORT), "--no-auth",
     ]
 
-    say("\nPlan: Exasol Nano (database) + Exasol MCP server (sidecar)"
-        + (" + JSON Tables (sidecar)" if with_json_tables else ""))
-    say("  network: " + NETWORK)
-    say("  db : " + " ".join(db_cmd))
-    say("  mcp: " + " ".join(mcp_cmd))
+    title = "Exasol Nano + MCP" + (" + JSON Tables" if with_json_tables else "") + f"  {DIM}(Docker){RESET}"
+    plan_steps = [
+        ("Create a private Docker network", NETWORK),
+        ("Start Exasol Nano (database)", f"{NANO_IMAGE}"),
+        ("Start the MCP server (sidecar)", f"{MCP_IMAGE}"),
+    ]
     if with_json_tables:
-        say(f"  jt : {JT_CONTAINER} from {JT_IMAGE} (built once from source: Python + Rust)")
+        plan_steps.append(("Build & start JSON Tables", "first run compiles a Rust engine"))
+    endpoints = [
+        ("Database", f"127.0.0.1:{SQL_PORT}", "user sys / password exasol"),
+        ("Web UI", f"https://127.0.0.1:{UI_PORT}", ""),
+        ("MCP", f"http://127.0.0.1:{mcp_port}/mcp", "point your LLM client here"),
+    ]
+    if with_json_tables:
+        endpoints.append(("JSON", "exasol-quickstart json-tables …", "ingest JSON → SQL"))
+
+    render_plan(title, plan_steps, endpoints)
+
     if dry_run:
-        say("\n(dry run - nothing executed)")
+        say()
+        say(f"  {DIM}Exact commands:{RESET}")
+        for c in ([db_cmd, mcp_cmd]):
+            say(f"  {DIM}$ {' '.join(c)}{RESET}")
+        if with_json_tables:
+            say(f"  {DIM}$ docker build -t {JT_IMAGE} …  (then run as a sidecar){RESET}")
+        say()
+        say(f"  {YELLOW}Dry run{RESET} {DIM}— nothing was executed.{RESET}\n")
         return 0
+    say()
 
     total = 6 if with_json_tables else 5
     step(1, total, "Checking Docker")
@@ -267,18 +341,17 @@ def nano_docker(with_json_tables: bool, mcp_port: int, dry_run: bool) -> int:
 
 
 def summary(mcp_port: int, jt_running: bool = False) -> None:
-    say("\n" + "=" * 62)
-    say("  Exasol quickstart is up")
-    say("=" * 62)
-    say(f"  Database : 127.0.0.1:{SQL_PORT}   (user sys / password exasol)")
-    say(f"  Web UI   : https://127.0.0.1:{UI_PORT}")
-    say(f"  MCP      : http://127.0.0.1:{mcp_port}/mcp   (point your LLM client here)")
+    heading(f"{GREEN}✓ Exasol quickstart is up{RESET}")
+    say()
+    kv("Database", f"127.0.0.1:{SQL_PORT}", "user sys / password exasol")
+    kv("Web UI", f"https://127.0.0.1:{UI_PORT}")
+    kv("MCP", f"http://127.0.0.1:{mcp_port}/mcp", "point your LLM client here")
     if jt_running:
-        say(f"  JSON     : exasol-quickstart json-tables --help")
-        say(f"             (put files in the '{JT_WORKSPACE_VOL}' volume, then ingest-and-wrap)")
+        kv("JSON", "exasol-quickstart json-tables --help", "ingest JSON → SQL")
+    say()
     stop = f"docker rm -f {DB_CONTAINER} {MCP_CONTAINER}" + (f" {JT_CONTAINER}" if jt_running else "")
-    say(f"  Stop     : {stop}")
-    say("")
+    kv("Stop", f"{DIM}{stop}{RESET}")
+    say()
 
 
 # --------------------------------------------------------- native (no-Docker) bases
@@ -414,12 +487,13 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     system, arch = detect()
-    say(f"exasol-quickstart {__version__}  -  platform: {system}/{arch}")
+    banner()
+    kv("Platform", f"{system} / {arch}")
 
     # Auto: prefer the tested Nano+Docker bundle when Docker is available; otherwise
     # fall back to the OS-native no-Docker base.
     base = args.base if args.base != "auto" else choose_base(system, arch)
-    say(f"Base: {base}" + ("  (auto)" if args.base == "auto" else "  (forced)"))
+    kv("Base", base, "auto-selected" if args.base == "auto" else "forced")
 
     with_jt = not args.no_json_tables
     if base == "nano-docker":
