@@ -73,9 +73,7 @@ exasol-quickstart json-tables ingest-and-wrap --input /workspace/data.json --nam
 
 ## Why it's built this way
 
-The Exasol engine is Linux-native, so the most portable, tested path runs it in a **container**; on macOS it can instead use **Exasol Personal**, which runs the database in a native VM (no Docker). MCP and JSON Tables have conflicting `pyexasol` pins, so each runs isolated (separate containers, or separate host envs). Full rationale, decision graph, and pros/cons:
-
-📖 **[The recommended approach](https://krishna-exasol.github.io/bundle-installation-methods/case-studies/recommended-approach/)**
+The Exasol engine is Linux-native, so the most portable, tested path runs it in a **container**; on macOS it can instead use **Exasol Personal**, which runs the database in a native VM (no Docker). MCP and JSON Tables have conflicting `pyexasol` pins, so each runs isolated (separate containers, or separate host envs).
 
 ## Status
 
@@ -85,7 +83,6 @@ The Exasol engine is Linux-native, so the most portable, tested path runs it in 
 
 - **PyPI:** <https://pypi.org/project/exasol-quickstart/>
 - **GitHub:** <https://github.com/krishna-exasol/exasol-quickstart>
-- **Docs (design, decision graph, pros/cons):** <https://krishna-exasol.github.io/bundle-installation-methods/case-studies/recommended-approach/>
 
 ## License
 
