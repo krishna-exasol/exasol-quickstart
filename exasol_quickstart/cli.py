@@ -12,6 +12,8 @@ Nano "stack" system is not in the public image yet, so we use two containers.)
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import platform
 import shutil
 import socket
@@ -93,12 +95,24 @@ def detect() -> tuple[str, str]:
 
 
 def recommended_base(system: str, arch: str) -> str:
-    """The base recommended by the docs for this OS."""
+    """The base recommended by the docs for this OS (ignores Docker availability)."""
     if system == "darwin" and arch in ("arm64", "aarch64"):
         return "personal"          # native VM, no Docker
     if system == "linux":
         return "nano-native"       # native .run, no Docker
-    return "nano-docker"           # Windows (and the universally-tested path)
+    return "nano-docker"
+
+
+def choose_base(system: str, arch: str) -> str:
+    """Auto base selection.
+
+    Prefer the tested Nano+Docker bundle whenever Docker is available (so the bare
+    command is reliable everywhere). Only when Docker is ABSENT do we fall back to
+    the OS-native, no-Docker base — Personal on macOS, Nano .run on Linux.
+    """
+    if docker_ready():
+        return "nano-docker"
+    return recommended_base(system, arch)
 
 
 # ------------------------------------------------------------------- helpers
@@ -267,13 +281,107 @@ def summary(mcp_port: int, jt_running: bool = False) -> None:
     say("")
 
 
-# --------------------------------------------------------- experimental paths
-def not_yet(base: str, system: str, arch: str) -> int:
-    say(f"\nThe recommended base for {system}/{arch} is '{base}', which is not yet "
-        "automated in this release.")
-    say("\nWhat works today (any OS with Docker):")
+# --------------------------------------------------------- native (no-Docker) bases
+PERSONAL_INSTALLER = "https://downloads.exasol.com/exasol-personal/installer.sh"
+
+
+def resolve_launcher() -> str | None:
+    if have("exasol"):
+        return "exasol"
+    cand = os.path.expanduser("~/.local/bin/exasol")
+    return cand if os.path.exists(cand) else None
+
+
+def personal(with_json_tables: bool, mcp_port: int, dry_run: bool) -> int:
+    """macOS (Apple Silicon) host path: Exasol Personal local + MCP on the host.
+
+    EXPERIMENTAL — implemented from the documented launcher behaviour but not yet
+    validated end-to-end. If anything fails, fall back to `--base nano-docker`.
+    """
+    say("\nPlan: Exasol Personal (host DB) + MCP server (host, pipx)"
+        + (" + JSON Tables (host venv)" if with_json_tables else ""))
+    say("  1. install/verify the `exasol` launcher")
+    say("  2. `exasol install local`            (managed VM; ~10-20 min first time)")
+    say("  3. `exasol info --json`              (discover dsn / port / password)")
+    say(f"  4. `pipx install exasol-mcp-server`  (start MCP on 127.0.0.1:{mcp_port})")
+    if with_json_tables:
+        say("  5. venv + Rust build of JSON Tables (guided)")
+    if dry_run:
+        say("\n(dry run - nothing executed)")
+        return 0
+
+    warn("EXPERIMENTAL macOS path — not yet validated end-to-end. "
+         "If it fails, run with --base nano-docker (needs Docker).")
+
+    exe = resolve_launcher()
+    if not exe:
+        say("\nInstalling the Exasol Personal launcher...")
+        if not have("curl"):
+            die("curl is required to install the launcher.")
+        run(["sh", "-c", f"curl -fsSL {PERSONAL_INSTALLER} | sh"], check=False)
+        exe = resolve_launcher() or die(
+            "launcher still not found; add ~/.local/bin to PATH and retry.")
+    ok(f"launcher: {exe}")
+
+    if run([exe, "info", "--json"], check=False, capture=True).returncode != 0:
+        warn("no deployment found; running `exasol install local` (this can take 10-20 min)...")
+        if run([exe, "install", "local"], check=False).returncode != 0:
+            die("`exasol install local` failed (macOS Apple-Silicon only). See the launcher output.")
+    else:
+        run([exe, "start"], check=False, capture=True)
+
+    info_raw = run([exe, "info", "--json"], check=False, capture=True).stdout
+    try:
+        info = json.loads(info_raw)
+        conn = info.get("connection", {})
+        port = conn.get("dbPort") or SQL_PORT
+        user = conn.get("username") or "sys"
+        deploy_dir = info.get("deploymentDir") or ""
+    except Exception:
+        die("could not read `exasol info --json`. Try `exasol info`.")
+    password = "exasol"
+    secrets = os.path.join(deploy_dir, "secrets.json") if deploy_dir else ""
+    if secrets and os.path.exists(secrets):
+        try:
+            password = json.load(open(secrets, encoding="utf-8")).get("dbPassword", "exasol")
+        except Exception:
+            pass
+    ok(f"database: 127.0.0.1:{port}  (user {user})")
+
+    say("\nInstalling and starting the MCP server (pipx)...")
+    run(["pipx", "install", "exasol-mcp-server"], check=False)
+    env = dict(os.environ, EXA_DSN=f"127.0.0.1:{port}", EXA_USER=user,
+               EXA_PASSWORD=str(password), EXA_SSL_CERT_VALIDATION="false")
+    try:
+        subprocess.Popen(
+            ["exasol-mcp-server-http", "--host", "127.0.0.1", "--port", str(mcp_port), "--no-auth"],
+            env=env)
+        ok(f"MCP starting at http://127.0.0.1:{mcp_port}/mcp")
+    except FileNotFoundError:
+        warn("could not launch exasol-mcp-server-http; ensure pipx's bin dir is on PATH, "
+             f"then run it manually with EXA_DSN=127.0.0.1:{port}.")
+
+    if with_json_tables:
+        say("\nJSON Tables (host) — one-time setup (needs Python 3.10+ and a Rust toolchain):")
+        say("    git clone https://github.com/exasol-labs/exasol-json-tables.git")
+        say("    cd exasol-json-tables && python3 -m pip install -e .")
+        say(f"    exasol-json-tables ingest-and-wrap --input data.json --name demo \\")
+        say(f"        --dsn 127.0.0.1:{port} --user {user} --password <password>")
+
+    say("\n" + "=" * 62)
+    say("  Exasol Personal quickstart (experimental)")
+    say("=" * 62)
+    say(f"  Database : 127.0.0.1:{port}  (user {user})")
+    say(f"  MCP      : http://127.0.0.1:{mcp_port}/mcp")
+    say("")
+    return 0
+
+
+def nano_native(system: str, arch: str) -> int:
+    say("\nLinux native (Nano `.run`, no Docker) is not auto-installed yet.")
+    say("On Linux the reliable path today is the Docker bundle:")
     say("    exasol-quickstart --base nano-docker")
-    say(f"\nThe full '{base}' flow is on the roadmap — see:\n    {DOCS_URL}")
+    say(f"\nNative-`.run` automation is on the roadmap — see:\n    {DOCS_URL}")
     return 2
 
 
@@ -308,14 +416,17 @@ def main(argv: list[str] | None = None) -> int:
     system, arch = detect()
     say(f"exasol-quickstart {__version__}  -  platform: {system}/{arch}")
 
-    # The one base that works on every OS today. (Native no-Docker bases per OS
-    # arrive in 0.3.0; until then the bare command always uses Nano + Docker.)
-    base = args.base if args.base != "auto" else "nano-docker"
-    say(f"Base: {base}" + ("  (default)" if args.base == "auto" else "  (forced)"))
+    # Auto: prefer the tested Nano+Docker bundle when Docker is available; otherwise
+    # fall back to the OS-native no-Docker base.
+    base = args.base if args.base != "auto" else choose_base(system, arch)
+    say(f"Base: {base}" + ("  (auto)" if args.base == "auto" else "  (forced)"))
 
+    with_jt = not args.no_json_tables
     if base == "nano-docker":
-        return nano_docker(not args.no_json_tables, args.mcp_port, args.dry_run)
-    return not_yet(base, system, arch)
+        return nano_docker(with_jt, args.mcp_port, args.dry_run)
+    if base == "personal":
+        return personal(with_jt, args.mcp_port, args.dry_run)
+    return nano_native(system, arch)
 
 
 if __name__ == "__main__":

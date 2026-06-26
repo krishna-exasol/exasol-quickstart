@@ -25,17 +25,20 @@ exasol-quickstart json-tables --help   # run the JSON Tables CLI in its containe
 docker rm -f exasol-quickstart-db exasol-quickstart-mcp exasol-quickstart-json-tables   # stop
 ```
 
-> **Status (`0.2.0`):** the bare command stands up **Nano + MCP + JSON Tables** via Docker
-> on any OS — tested end-to-end. Next: **no-Docker native bases per OS** (Exasol Personal
-> on macOS, Nano `.run` on Linux), selected automatically — same bare command.
+> **Status (`0.3.0`):** the bare command **auto-selects the base** — Nano + Docker when
+> Docker is available (tested end-to-end: DB + MCP + JSON Tables incl. ingest), or the
+> **OS-native no-Docker base** when it isn't (Exasol Personal on macOS / Nano `.run` on
+> Linux — *experimental, not yet validated end-to-end*). Same bare command everywhere.
 
-## Roadmap — same command, smarter under the hood
+## Auto base selection — same command, smarter under the hood
 
-| OS | Planned best base | Add-ons | Docker? | Status |
-|----|-------------------|---------|---------|--------|
-| Windows / any with Docker | Exasol Nano (Docker) | sidecar containers | Yes | **ships today** |
-| macOS (Apple Silicon) | Exasol Personal (local VM) | host: MCP + JSON Tables | No | roadmap |
-| Linux | Exasol Nano (native `.run`) | host: MCP + JSON Tables | No | roadmap |
+| Situation | Base used | Add-ons | Status |
+|-----------|-----------|---------|--------|
+| Any OS **with Docker** | Exasol Nano (Docker) | sidecar containers | **tested** |
+| macOS (Apple Silicon), **no Docker** | Exasol Personal (local VM) | host: MCP (pipx) + JSON Tables (venv) | experimental |
+| Linux, **no Docker** | Exasol Nano (native `.run`) | host | roadmap |
+
+Force a specific base with `--base nano-docker|personal|nano-native`.
 
 Full design, decision graph, pros/cons, and requirements:
 <https://krishna-exasol.github.io/bundle-installation-methods/case-studies/recommended-approach/>
