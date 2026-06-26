@@ -47,17 +47,15 @@ Every form detects your OS, provisions Exasol the right way, and prints the endp
 ## 🎁 What you get
 
 ```text
-                       exasol-quickstart
-                              │
-                              ▼
-        ┌──────────────────────────────────────────────┐
-        │   Exasol  (database)        127.0.0.1:8563    │
-        │      ▲            ▲                            │
-        │      │            │                            │
-        │   MCP server   JSON Tables                     │
-        │   :4896/mcp    ingest JSON → SQL               │
-        └──────────────────────────────────────────────┘
+exasol-quickstart  ->  three services on one shared network:
+
++----------------------+   +----------------------+   +----------------------+
+|  Exasol  (database)  |   |  MCP server          |   |  JSON Tables         |
+|  127.0.0.1:8563      |   |  :4896/mcp           |   |  JSON  ->  SQL       |
++----------------------+   +----------------------+   +----------------------+
 ```
+
+<sub>The MCP server and JSON Tables both connect to the Exasol database over a shared Docker network.</sub>
 
 | Component | Endpoint | Purpose |
 |-----------|----------|---------|
