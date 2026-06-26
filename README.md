@@ -4,9 +4,9 @@
 **MCP Server** (LLM/agent access) and, optionally, **JSON Tables** (JSON → SQL),
 chosen automatically for your operating system.
 
-> **Status (`0.1.0`):** brings up **Exasol Nano + the MCP server via Docker** on any OS.
-> The per-OS native bases (Personal on macOS, Nano `.run` on Linux) and JSON Tables
-> are the next milestones.
+> **Status (`0.1.1`):** brings up **Exasol Nano (database) + the official Exasol MCP
+> server image as a sidecar**, via Docker, on any OS — tested end-to-end. The per-OS
+> native bases (Personal on macOS, Nano `.run` on Linux) and JSON Tables are next.
 
 ## Usage
 

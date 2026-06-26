@@ -1,8 +1,12 @@
 """exasol-quickstart — one command to try Exasol with AI add-ons.
 
 Detects the platform, brings up an Exasol base database, and layers the
-MCP server (and optionally JSON Tables) on top. See the design + decision graph:
+MCP server (and, later, JSON Tables) on top. See the design + decision graph:
 https://krishna-exasol.github.io/bundle-installation-methods/case-studies/recommended-approach/
+
+0.1.x ships the reliable, public-image path: Exasol Nano (database) + the
+official Exasol MCP server image as a sidecar on a shared Docker network. (The
+Nano "stack" system is not in the public image yet, so we use two containers.)
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import argparse
 import platform
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -20,7 +25,10 @@ from . import __version__
 DOCS_URL = "https://krishna-exasol.github.io/bundle-installation-methods/case-studies/recommended-approach/"
 
 NANO_IMAGE = "exasol/nano:latest"
-CONTAINER = "exasol-quickstart"
+MCP_IMAGE = "exasol/mcp-server:latest"
+NETWORK = "exasol-quickstart-net"
+DB_CONTAINER = "exasol-quickstart-db"
+MCP_CONTAINER = "exasol-quickstart-mcp"
 VOLUME = "exasol-quickstart-data"
 SQL_PORT = 8563
 UI_PORT = 8443
@@ -50,15 +58,12 @@ def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
 
 
 def run(cmd: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=check, text=True,
-                          capture_output=capture)
+    return subprocess.run(cmd, check=check, text=True, capture_output=capture)
 
 
 # ------------------------------------------------------------------- platform
 def detect() -> tuple[str, str]:
-    system = platform.system().lower()      # 'darwin' | 'linux' | 'windows'
-    arch = platform.machine().lower()       # 'arm64'/'aarch64' | 'x86_64'/'amd64'
-    return system, arch
+    return platform.system().lower(), platform.machine().lower()
 
 
 def recommended_base(system: str, arch: str) -> str:
@@ -70,19 +75,27 @@ def recommended_base(system: str, arch: str) -> str:
     return "nano-docker"           # Windows (and the universally-tested path)
 
 
-# ----------------------------------------------------------------- nano/docker
+# ------------------------------------------------------------------- helpers
 def have(tool: str) -> bool:
     return shutil.which(tool) is not None
 
 
 def docker_ready() -> bool:
-    if not have("docker"):
-        return False
-    return run(["docker", "info"], check=False, capture=True).returncode == 0
+    return have("docker") and run(["docker", "info"], check=False, capture=True).returncode == 0
 
 
-def mcp_healthy(port: int, timeout: int = 180) -> bool:
-    url = f"http://127.0.0.1:{port}/health"
+def wait_tcp(host: str, port: int, timeout: int = 120) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                return True
+        except OSError:
+            time.sleep(3)
+    return False
+
+
+def wait_http(url: str, timeout: int = 180) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -90,81 +103,96 @@ def mcp_healthy(port: int, timeout: int = 180) -> bool:
                 if r.status == 200:
                     return True
         except Exception:
-            pass
-        time.sleep(3)
+            time.sleep(3)
     return False
 
 
-def nano_docker(addons: list[str], mcp_port: int, dry_run: bool, assume_yes: bool) -> int:
-    stacks = ["mcp-server"]
-    cmd = [
-        "docker", "run", "-d", "--name", CONTAINER,
+# ----------------------------------------------------------------- nano/docker
+def nano_docker(addons: list[str], mcp_port: int, dry_run: bool) -> int:
+    db_cmd = [
+        "docker", "run", "-d", "--name", DB_CONTAINER, "--network", NETWORK,
         "--shm-size=1g",
         "-p", f"127.0.0.1:{SQL_PORT}:{SQL_PORT}",
         "-p", f"127.0.0.1:{UI_PORT}:{UI_PORT}",
-        "-p", f"127.0.0.1:{mcp_port}:{MCP_PORT}",
         "-v", f"{VOLUME}:/exa",
         NANO_IMAGE,
-        "--provision-stacks", ",".join(stacks),
+    ]
+    mcp_cmd = [
+        "docker", "run", "-d", "--name", MCP_CONTAINER, "--network", NETWORK,
+        "-p", f"127.0.0.1:{mcp_port}:{MCP_PORT}",
+        "-e", f"EXA_DSN={DB_CONTAINER}:{SQL_PORT}",
+        "-e", "EXA_USER=sys",
+        "-e", "EXA_PASSWORD=exasol",
+        "-e", "EXA_SSL_CERT_VALIDATION=false",
+        "-e", 'EXA_MCP_SETTINGS={"enable_read_query": true}',
+        MCP_IMAGE,
+        "--host", "0.0.0.0", "--port", str(MCP_PORT), "--no-auth",
     ]
 
-    say("\nPlan: Exasol Nano (Docker) + MCP server")
-    say("  " + " ".join(cmd))
+    say("\nPlan: Exasol Nano (database) + Exasol MCP server (sidecar)")
+    say("  network: " + NETWORK)
+    say("  db : " + " ".join(db_cmd))
+    say("  mcp: " + " ".join(mcp_cmd))
     if "json-tables" in addons:
-        warn("JSON Tables for the Nano base is experimental and not wired in 0.1.0 "
-             "(needs a custom Nano stack). Skipping it for now — see the docs.")
+        warn("JSON Tables is not wired in this release yet (needs a Rust-capable "
+             "sidecar/stack); see the docs. Continuing without it.")
     if dry_run:
         say("\n(dry run - nothing executed)")
         return 0
 
-    total = 4
+    total = 5
     step(1, total, "Checking Docker")
     if not docker_ready():
-        die("Docker is not installed or not running. Start Docker Desktop and retry, "
-            "or run with --dry-run to see the plan.")
+        die("Docker is not installed or not running. Start Docker and retry "
+            "(or use --dry-run to see the plan).")
     ok("Docker engine is running")
 
-    step(2, total, "Removing any previous quickstart container")
-    run(["docker", "rm", "-f", CONTAINER], check=False, capture=True)
-    ok("clean")
+    step(2, total, "Preparing network and clearing any previous run")
+    run(["docker", "rm", "-f", DB_CONTAINER, MCP_CONTAINER], check=False, capture=True)
+    run(["docker", "network", "create", NETWORK], check=False, capture=True)
+    ok("ready")
 
-    step(3, total, f"Starting Exasol Nano + MCP (first run pulls {NANO_IMAGE} and provisions stacks)")
-    say("    this can take a few minutes on the first run...")
-    run(cmd)
-    ok(f"container '{CONTAINER}' started")
+    step(3, total, f"Starting Exasol Nano ({NANO_IMAGE})")
+    run(db_cmd)
+    if wait_tcp("127.0.0.1", SQL_PORT, timeout=180):
+        ok(f"database accepting connections on 127.0.0.1:{SQL_PORT}")
+    else:
+        warn("database port not open yet; it may still be initialising "
+             f"(docker logs -f {DB_CONTAINER}).")
 
-    step(4, total, "Waiting for the MCP endpoint to come up")
-    if mcp_healthy(mcp_port):
+    step(4, total, f"Starting the Exasol MCP server ({MCP_IMAGE})")
+    run(mcp_cmd)
+    ok(f"container '{MCP_CONTAINER}' started")
+
+    step(5, total, "Waiting for the MCP endpoint")
+    if wait_http(f"http://127.0.0.1:{mcp_port}/health"):
         ok(f"MCP is healthy at http://127.0.0.1:{mcp_port}/mcp")
     else:
-        warn("MCP did not report healthy yet; it may still be provisioning. "
-             f"Check: docker logs -f {CONTAINER}")
+        warn(f"MCP not healthy yet; check: docker logs -f {MCP_CONTAINER}")
 
     summary(mcp_port)
     return 0
 
 
 def summary(mcp_port: int) -> None:
-    say("\n" + "=" * 60)
+    say("\n" + "=" * 62)
     say("  Exasol quickstart is up")
-    say("=" * 60)
+    say("=" * 62)
     say(f"  Database : 127.0.0.1:{SQL_PORT}   (user sys / password exasol)")
     say(f"  Web UI   : https://127.0.0.1:{UI_PORT}")
     say(f"  MCP      : http://127.0.0.1:{mcp_port}/mcp   (point your LLM client here)")
-    say(f"  Logs     : docker logs -f {CONTAINER}")
-    say(f"  Stop     : docker rm -f {CONTAINER}")
+    say(f"  Logs     : docker logs -f {DB_CONTAINER}   |   docker logs -f {MCP_CONTAINER}")
+    say(f"  Stop     : docker rm -f {DB_CONTAINER} {MCP_CONTAINER}")
     say("")
 
 
 # --------------------------------------------------------- experimental paths
-def not_yet(base: str, system: str, arch: str, mcp_port: int) -> int:
+def not_yet(base: str, system: str, arch: str) -> int:
     say(f"\nThe recommended base for {system}/{arch} is '{base}', which is not yet "
-        "automated in this 0.1.0 release.")
-    say("\nWhat 0.1.0 supports today:")
-    say("  - The Nano-via-Docker base + MCP, on any OS with Docker:")
-    say("        exasol-quickstart --base nano-docker")
-    say(f"\nThe full '{base}' flow (and JSON Tables) is on the roadmap — see:")
-    say(f"  {DOCS_URL}")
+        "automated in this release.")
+    say("\nWhat works today (any OS with Docker):")
+    say("    exasol-quickstart --base nano-docker")
+    say(f"\nThe full '{base}' flow is on the roadmap — see:\n    {DOCS_URL}")
     return 2
 
 
@@ -192,19 +220,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     system, arch = detect()
-
     say(f"exasol-quickstart {__version__}  -  platform: {system}/{arch}")
 
     base = args.base if args.base != "auto" else recommended_base(system, arch)
     say(f"Base: {base}" + ("  (auto-selected)" if args.base == "auto" else "  (forced)"))
 
     if base == "nano-docker":
-        return nano_docker(args.addons, args.mcp_port, args.dry_run, args.yes)
-
-    # nano-native / personal: real flows are on the roadmap; guide the user for now.
-    if args.dry_run:
-        return not_yet(base, system, arch, args.mcp_port)
-    return not_yet(base, system, arch, args.mcp_port)
+        return nano_docker(args.addons, args.mcp_port, args.dry_run)
+    return not_yet(base, system, arch)
 
 
 if __name__ == "__main__":
