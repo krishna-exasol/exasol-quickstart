@@ -162,13 +162,17 @@ def recommended_base(system: str, arch: str) -> str:
 def choose_base(system: str, arch: str) -> str:
     """Auto base selection.
 
-    Prefer the tested Nano+Docker bundle whenever Docker is available (so the bare
-    command is reliable everywhere). Only when Docker is ABSENT do we fall back to
-    the OS-native, no-Docker base — Personal on macOS, Nano .run on Linux.
+    Prefer the tested Nano + Docker bundle whenever Docker is available. When it is
+    not, fall back to the only *implemented* no-Docker base — Exasol Personal on
+    macOS. Everywhere else (Linux / Windows) Docker is the working path today, so we
+    select nano-docker and surface a clear "start Docker" message if it's missing.
+    (Native Nano `.run` on Linux is on the roadmap; reach it via --base nano-native.)
     """
     if docker_ready():
         return "nano-docker"
-    return recommended_base(system, arch)
+    if system == "darwin" and arch in ("arm64", "aarch64"):
+        return "personal"
+    return "nano-docker"
 
 
 # ------------------------------------------------------------------- helpers
