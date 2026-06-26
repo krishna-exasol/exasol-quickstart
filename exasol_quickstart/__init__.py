@@ -1,6 +1,7 @@
 """exasol-quickstart — one command to try Exasol with AI add-ons.
 
-This 0.0.1 release reserves the name on PyPI. The full installer is in progress.
+0.1.0 brings up Exasol Nano + the MCP server via Docker on any OS; the per-OS
+native bases (Personal on macOS, Nano .run on Linux) and JSON Tables are next.
 """
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"

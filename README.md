@@ -4,16 +4,23 @@
 **MCP Server** (LLM/agent access) and, optionally, **JSON Tables** (JSON → SQL),
 chosen automatically for your operating system.
 
-> **Status:** `0.0.1` is a name-reservation placeholder. The full platform-aware
-> installer is in progress.
+> **Status (`0.1.0`):** brings up **Exasol Nano + the MCP server via Docker** on any OS.
+> The per-OS native bases (Personal on macOS, Nano `.run` on Linux) and JSON Tables
+> are the next milestones.
 
-## Planned usage
+## Usage
 
 ```bash
-pipx install exasol-quickstart
-exasol-quickstart                 # base + MCP server
-exasol-quickstart --with json-tables   # base + MCP + JSON Tables
+# from PyPI (reserved name) — or the latest from git:
+pipx install git+https://github.com/krishna-exasol/exasol-quickstart.git
+
+exasol-quickstart --base nano-docker        # Exasol Nano + MCP (works today, any OS w/ Docker)
+exasol-quickstart --dry-run                 # show the plan without doing anything
+exasol-quickstart --help
 ```
+
+After it comes up: database on `127.0.0.1:8563` (`sys`/`exasol`), MCP at
+`http://127.0.0.1:4896/mcp`. Stop with `docker rm -f exasol-quickstart`.
 
 ## How it will work (per OS)
 
