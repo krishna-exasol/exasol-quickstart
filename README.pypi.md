@@ -13,18 +13,21 @@
 
 ---
 
-## ⚡ Get started in one line
+## ⚡ Get started
+
+**▶️ Try it** — runs once, nothing installed:
 
 ```bash
-pipx run exasol-quickstart
+pipx run exasol-quickstart      # with pipx
+uvx exasol-quickstart           # with uv
 ```
 
-Pick the form that fits — **try it** (runs once, nothing installed) or **keep it** (installs the command for repeated use), with either `pipx` or `uv`:
+**📌 Keep it** — installs the command so you can run it again later:
 
-| | with **pipx** | with **uv** |
-|---|---|---|
-| **▶️ Try it once** | `pipx run exasol-quickstart` | `uvx exasol-quickstart` |
-| **📌 Keep it** | `pipx install exasol-quickstart && exasol-quickstart` | `uv tool install exasol-quickstart && exasol-quickstart` |
+```bash
+pipx install exasol-quickstart && exasol-quickstart      # with pipx
+uv tool install exasol-quickstart && exasol-quickstart   # with uv
+```
 
 Every form detects your OS, provisions Exasol the right way, and prints the endpoints. **No flags. No multi-step setup.**
 
