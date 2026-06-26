@@ -60,9 +60,9 @@ flowchart TB
     QS(["⚡ exasol-quickstart"]):::cmd --> DB[("🗄️ Exasol database<br/>127.0.0.1:8563")]:::db
     MCP["🤖 MCP server<br/>:4896/mcp"]:::svc --> DB
     JT["📦 JSON Tables<br/>JSON → SQL"]:::svc --> DB
-    classDef db fill:#1f7a5a,stroke:#3fb950,color:#fff;
-    classDef svc fill:#1c2330,stroke:#58a6ff,color:#fff;
-    classDef cmd fill:#161b22,stroke:#d29922,color:#fff;
+    classDef db fill:#dbeafe,stroke:#3b82f6,color:#13294b;
+    classDef svc fill:#eaf2fb,stroke:#7aa7d9,color:#13294b;
+    classDef cmd fill:#f1f5f9,stroke:#9fb3c8,color:#13294b;
 ```
 
 <sub>One command starts three services on a shared Docker network — MCP and JSON Tables both connect to the database.</sub>
