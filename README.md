@@ -19,13 +19,15 @@
 **To try it** — runs once, nothing left installed:
 
 ```bash
-pipx run exasol-quickstart
+pipx run exasol-quickstart      # with pipx
+uvx exasol-quickstart           # with uv
 ```
 
 **To keep it** — installs the command so you can run it again later:
 
 ```bash
-pipx install exasol-quickstart && exasol-quickstart
+pipx install exasol-quickstart && exasol-quickstart      # with pipx
+uv tool install exasol-quickstart && exasol-quickstart   # with uv
 ```
 
 Either form detects your operating system, provisions Exasol the appropriate way, and prints the connection endpoints. No flags, no multi-step setup.
