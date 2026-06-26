@@ -4,4 +4,4 @@
 native bases (Personal on macOS, Nano .run on Linux) and JSON Tables are next.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"

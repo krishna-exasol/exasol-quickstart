@@ -222,8 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     system, arch = detect()
     say(f"exasol-quickstart {__version__}  -  platform: {system}/{arch}")
 
-    base = args.base if args.base != "auto" else recommended_base(system, arch)
-    say(f"Base: {base}" + ("  (auto-selected)" if args.base == "auto" else "  (forced)"))
+    # The one base that works on every OS today. (Native no-Docker bases per OS
+    # arrive in 0.3.0; until then the bare command always uses Nano + Docker.)
+    base = args.base if args.base != "auto" else "nano-docker"
+    say(f"Base: {base}" + ("  (default)" if args.base == "auto" else "  (forced)"))
 
     if base == "nano-docker":
         return nano_docker(args.addons, args.mcp_port, args.dry_run)

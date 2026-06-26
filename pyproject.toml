@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "exasol-quickstart"
-version = "0.1.1"
-description = "One command to try Exasol with AI add-ons (MCP Server, JSON Tables). Preview — name placeholder."
+version = "0.1.2"
+description = "One command to try Exasol with AI add-ons (MCP Server, JSON Tables)."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
