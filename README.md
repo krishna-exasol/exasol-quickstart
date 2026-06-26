@@ -10,7 +10,7 @@ A full Exasol analytics database, an **LLM-ready MCP server**, and **JSON-native
 
 [![PyPI](https://img.shields.io/pypi/v/exasol-quickstart?style=for-the-badge&color=1f7a5a&logo=pypi&logoColor=white)](https://pypi.org/project/exasol-quickstart/)
 [![Python](https://img.shields.io/pypi/pyversions/exasol-quickstart?style=for-the-badge&color=3776AB&logo=python&logoColor=white)](https://pypi.org/project/exasol-quickstart/)
-[![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555?style=for-the-badge)](#requirements)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555?style=for-the-badge)](#-requirements)
 [![License](https://img.shields.io/badge/license-MIT-d29922?style=for-the-badge)](LICENSE)
 
 [**📦 PyPI**](https://pypi.org/project/exasol-quickstart/) &nbsp;•&nbsp; [**💻 GitHub**](https://github.com/krishna-exasol/exasol-quickstart)
@@ -47,15 +47,17 @@ Every form detects your OS, provisions Exasol the right way, and prints the endp
 ## 🎁 What you get
 
 ```text
-exasol-quickstart  ->  three services on one shared network:
-
-+----------------------+   +----------------------+   +----------------------+
-|  Exasol  (database)  |   |  MCP server          |   |  JSON Tables         |
-|  127.0.0.1:8563      |   |  :4896/mcp           |   |  JSON  ->  SQL       |
-+----------------------+   +----------------------+   +----------------------+
+                          exasol-quickstart
+                                  │
+                                  ▼
+        ┌──────────────────────────────────────────────┐
+        │   Exasol  (database)         127.0.0.1:8563  │
+        │      ▲            ▲                          │
+        │      │            │                          │
+        │   MCP server   JSON Tables                   │
+        │   :4896/mcp    ingest JSON → SQL             │
+        └──────────────────────────────────────────────┘
 ```
-
-<sub>The MCP server and JSON Tables both connect to the Exasol database over a shared Docker network.</sub>
 
 | Component | Endpoint | Purpose |
 |-----------|----------|---------|
